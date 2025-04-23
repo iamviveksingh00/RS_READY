@@ -1,5 +1,4 @@
 import pickle
-
 import requests
 from flask import Flask, jsonify, render_template, request
 from sentence_transformers import SentenceTransformer
@@ -19,8 +18,8 @@ RAPIDAPI_KEY = '91bc8f445dmsh0bdf292d75b8c58p15bdf4jsn87b9450c30d1'
 API_HOST = 'imdb8.p.rapidapi.com'
 
 
-def fetch_poster(movie_name):
-    """Fetch movie poster from IMDb API."""
+def fetch_movie_details(movie_name):
+    """Fetch movie details (poster, genre, cast, rating, overview) from IMDb API."""
     headers = {'X-RapidAPI-Key': RAPIDAPI_KEY, 'X-RapidAPI-Host': API_HOST}
     search_url = f"https://imdb8.p.rapidapi.com/title/find?q={movie_name}"
 
@@ -31,11 +30,38 @@ def fetch_poster(movie_name):
 
         if 'results' in data and len(data['results']) > 0:
             for result in data['results']:
-                if 'image' in result and 'url' in result['image']:
-                    return result['image']['url']
-        return "https://via.placeholder.com/500x750?text=No+Poster+Available"
+                if 'id' in result:
+                    movie_id = result['id']
+                    details_url = f"https://imdb8.p.rapidapi.com/title/get-overview-details?tconst={movie_id}"
+                    details_response = requests.get(details_url, headers=headers, timeout=10)
+                    details_response.raise_for_status()
+                    details_data = details_response.json()
+
+                    # Extract required details
+                    movie_details = {
+                        "poster": result['image']['url'] if 'image' in result else "https://via.placeholder.com/500x750?text=No+Poster+Available",
+                        "genre": details_data.get('genres', []),
+                        "cast": details_data.get('crew', {}).get('cast', []),
+                        "rating": details_data.get('rating', 'N/A'),
+                        "overview": details_data.get('overview', 'No overview available')
+                    }
+                    return movie_details
+
+        return {
+            "poster": "https://via.placeholder.com/500x750?text=No+Poster+Available",
+            "genre": [],
+            "cast": [],
+            "rating": "N/A",
+            "overview": "No overview available"
+        }
     except requests.RequestException:
-        return "https://via.placeholder.com/500x750?text=Error+Fetching+Poster"
+        return {
+            "poster": "https://via.placeholder.com/500x750?text=Error+Fetching+Poster",
+            "genre": [],
+            "cast": [],
+            "rating": "N/A",
+            "overview": "No overview available"
+        }
 
 
 def recommend_movies(user_input, method, top_n=5):
@@ -55,7 +81,14 @@ def recommend_movies(user_input, method, top_n=5):
         recommended_movies = new.iloc[top_indices]
 
     return [
-        {"title": row['title'], "poster": fetch_poster(row['title'])} 
+        {
+            "title": row['title'],
+            "poster": fetch_movie_details(row['title'])['poster'],
+            "genre": fetch_movie_details(row['title'])['genre'],
+            "cast": fetch_movie_details(row['title'])['cast'],
+            "rating": fetch_movie_details(row['title'])['rating'],
+            "overview": fetch_movie_details(row['title'])['overview']
+        } 
         for _, row in recommended_movies.iterrows()
     ]
 
